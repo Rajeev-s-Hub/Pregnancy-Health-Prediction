@@ -2,11 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
-import mysql.connector
-from mysql.connector import Error
 import matplotlib.pyplot as plt
 import seaborn as sns
-from datetime import datetime
 
 # Load pre-trained models
 @st.cache_resource
@@ -14,31 +11,6 @@ def load_models():
     pipeline_preterm = joblib.load("preterm_model.pkl")
     pipeline_health = joblib.load("health_model.pkl")
     return pipeline_preterm, pipeline_health
-
-# Connect to MySQL
-def create_db_connection():
-    try:
-        connection = mysql.connector.connect(
-            host="localhost",
-            user="root",
-            password="Rajdna0510@#$%",
-            database="PregnancyData"
-        )
-        return connection
-    except Error as err:
-        st.error(f"Database connection error: {err}")
-        return None
-
-# Insert data into MySQL
-def insert_prediction(cursor, user_input, preterm_prediction, health_prediction, gestational_period):
-    try:
-        query = """
-        INSERT INTO Predictions (user_input, predicted_preterm, predicted_health, gestational_period)
-        VALUES (%s, %s, %s, %s);
-        """
-        cursor.execute(query, (user_input, preterm_prediction, health_prediction, gestational_period))
-    except Error as err:
-        st.error(f"Failed to insert prediction: {err}")
 
 # Convert gestational period into weeks, days, and hours
 def convert_gestational_period(gestational_period_weeks):
@@ -70,14 +42,6 @@ manual_data = {
     "Age": st.sidebar.slider("Age", 18, 45, 30),
     "PCOS": st.sidebar.selectbox("PCOS", [0, 1]),
 }
-
-# Establish a persistent database connection
-connection = create_db_connection()
-
-if not connection:
-    st.error("Unable to connect to the database. Please check the connection details.")
-else:
-    cursor = connection.cursor()
 
 # Manual Prediction
 if st.sidebar.button("Run Prediction"):
@@ -139,16 +103,6 @@ if st.sidebar.button("Run Prediction"):
         """, unsafe_allow_html=True
     )
 
-    # Save to MySQL
-    if connection:
-        user_input_json = input_df.to_json()
-        preterm_str = "Pre-term" if preterm_pred else "Normal"
-        health_str = "At Risk" if health_pred else "Healthy"
-
-        insert_prediction(cursor, user_input_json, preterm_str, health_str, gestational_period_formatted)
-        connection.commit()
-        st.success("Prediction saved to the database.")
-
 # Batch Predictions
 st.write("## Batch Predictions")
 uploaded_file = st.file_uploader("Upload a CSV file", type=["csv"])
@@ -159,7 +113,7 @@ if uploaded_file:
 
     if not all(col in batch_data.columns for col in required_columns):
         st.error("Uploaded file is missing required columns.")
-    elif connection:
+    else:
         # Predict outcomes
         preterm_preds = pipeline_preterm.predict(batch_data[required_columns])
         health_preds = pipeline_health.predict(batch_data[required_columns])
@@ -199,8 +153,3 @@ if uploaded_file:
         plt.figure(figsize=(10, 8))
         sns.heatmap(correlation_matrix, annot=True, fmt=".2f", cmap="coolwarm", cbar=True)
         st.pyplot(plt)
-
-# Close the cursor and connection when the app stops
-if connection:
-    cursor.close()
-    connection.close()
