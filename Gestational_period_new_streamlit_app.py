@@ -23,7 +23,7 @@ def convert_gestational_period(gestational_period_weeks):
 pipeline_preterm, pipeline_health = load_models()
 
 # Streamlit UI
-st.title("Pregnancy Health Prediction App with Enhanced Display")
+st.title("Pregnancy Health Prediction App with Subgroup Analysis")
 
 # Sidebar for manual input
 st.sidebar.header("Manual Input")
@@ -55,7 +55,7 @@ if st.sidebar.button("Run Prediction"):
     gestational_period_weeks = np.random.uniform(28, 36) if preterm_pred else np.random.uniform(37, 42)
     gestational_period_formatted = convert_gestational_period(gestational_period_weeks)
 
-    # Enhanced Display with Styled Markdown
+    # Display Predictions
     st.markdown("## **Manual Input Predictions**")
 
     # Pre-term Birth
@@ -104,7 +104,7 @@ if st.sidebar.button("Run Prediction"):
     )
 
 # Batch Predictions
-st.write("## Batch Predictions")
+st.write("## Batch Predictions with Subgroup Analysis")
 uploaded_file = st.file_uploader("Upload a CSV file", type=["csv"])
 
 if uploaded_file:
@@ -115,41 +115,43 @@ if uploaded_file:
         st.error("Uploaded file is missing required columns.")
     else:
         # Predict outcomes
-        preterm_preds = pipeline_preterm.predict(batch_data[required_columns])
-        health_preds = pipeline_health.predict(batch_data[required_columns])
+        batch_data["Predicted Preterm Birth"] = pipeline_preterm.predict(batch_data[required_columns])
+        batch_data["Predicted Fetal Health"] = pipeline_health.predict(batch_data[required_columns])
+        
+        # Convert predictions to labels
+        batch_data["Predicted Preterm Birth"] = batch_data["Predicted Preterm Birth"].map({1: "Pre-term", 0: "Normal"})
+        batch_data["Predicted Fetal Health"] = batch_data["Predicted Fetal Health"].map({1: "At Risk", 0: "Healthy"})
 
-        # Add predictions
-        batch_data["Predicted Preterm Birth"] = ["Pre-term" if p == 1 else "Normal" for p in preterm_preds]
-        batch_data["Predicted Fetal Health"] = ["At Risk" if p == 1 else "Healthy" for p in health_preds]
-        batch_data["Estimated Gestational Period"] = [
-            convert_gestational_period(np.random.uniform(28, 36) if p == 1 else np.random.uniform(37, 42)) for p in preterm_preds
-        ]
+        # Estimated Gestational Period
+        batch_data["Estimated Gestational Period"] = batch_data["Predicted Preterm Birth"].apply(
+            lambda x: convert_gestational_period(np.random.uniform(28, 36) if x == "Pre-term" else np.random.uniform(37, 42))
+        )
 
         st.write("### Predictions:")
         st.dataframe(batch_data)
 
+        # Subgroup Analysis: Fertility Enhancing Drugs
+        st.write("## Subgroup Analysis for Fertility Enhancing Drugs")
+        
+        for group in [0, 1]:
+            subgroup = batch_data[batch_data["Fertility Enhancing Drugs"] == group]
+            st.write(f"### Subgroup: Fertility Enhancing Drugs = {group}")
+            
+            # Pie Chart: Preterm Birth
+            st.write("**Preterm Birth Distribution**")
+            fig, ax = plt.subplots()
+            subgroup["Predicted Preterm Birth"].value_counts().plot.pie(autopct='%1.1f%%', startangle=90, ax=ax)
+            st.pyplot(fig)
+
+            # Bar Chart: Fetal Health
+            st.write("**Fetal Health Distribution**")
+            st.bar_chart(subgroup["Predicted Fetal Health"].value_counts())
+
+            # Correlation Heatmap
+            st.write("**Attribute Correlation Heatmap**")
+            plt.figure(figsize=(10, 8))
+            sns.heatmap(subgroup[required_columns].corr(), annot=True, fmt=".2f", cmap="coolwarm", cbar=True)
+            st.pyplot(plt)
+
         # Download results
         st.download_button("Download Results", batch_data.to_csv(index=False), "predictions.csv")
-
-        # Add Graphics
-        st.write("## Prediction Summary Graphics")
-
-        # Pie chart for Pre-term vs. Normal
-        st.write("### Pre-term vs. Normal Distribution")
-        preterm_counts = batch_data["Predicted Preterm Birth"].value_counts()
-        fig, ax = plt.subplots()
-        ax.pie(preterm_counts, labels=preterm_counts.index, autopct='%1.1f%%', startangle=90, colors=['lightblue', 'orange'])
-        ax.axis('equal')
-        st.pyplot(fig)
-
-        # Bar chart for Fetal Health
-        st.write("### Fetal Health Distribution")
-        health_counts = batch_data["Predicted Fetal Health"].value_counts()
-        st.bar_chart(health_counts)
-
-        # Correlation Heatmap
-        st.write("### Attribute Correlation Heatmap")
-        correlation_matrix = batch_data[required_columns].corr()
-        plt.figure(figsize=(10, 8))
-        sns.heatmap(correlation_matrix, annot=True, fmt=".2f", cmap="coolwarm", cbar=True)
-        st.pyplot(plt)
